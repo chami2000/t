@@ -1,0 +1,26 @@
+{
+  "name": "tizenbrew-cineby-tv",
+  "version": "1.0.2",
+  "description": "Netflix-style TV interface for cineby.gd with full remote control support",
+  "author": "TizenBrew",
+  "license": "MIT",
+  "packageType": "mods",
+  "appName": "Cineby TV",
+  "websiteURL": "https://cineby.gd",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tizenbrew/cineby-tv"
+  },
+  "keywords": [
+    "tizenbrew",
+    "tizen",
+    "cineby",
+    "netflix",
+    "tv",
+    "smart-tv"
+  ],
+  "engines": {
+    "node": ">=0.10.0"
+  }
+}
