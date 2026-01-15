@@ -1,319 +1,299 @@
-// tv Tizen Module
-// Works on Home Page AND Player Page
-// Includes bypass for "Disable-Devtool" scripts
-// Tizen 3.0 / Chromium 47 Compatible (ES5)
-
+// AnimeKai.to TizenBrew Module - Auto-Dub Edition
+// Version 3.0
+// Features: Auto-Dub, Episode Selector, Performance Mode
 (function() {
   'use strict';
 
-  // ===============================================================
-  // 1. CONFIGURATION & DETECTION
-  // ===============================================================
-  var PAGE_MODE = 'UNKNOWN'; // Will detect: 'HOME' or 'PLAYER'
-
+  // ========================================
+  // 1. CONFIGURATION
+  // ========================================
   var CONFIG = {
-    focusColor: '#E50914',
+    targetDomain: 'animekai.to',
     
-    // Elements to ALWAYS hide on ALL pages
-    commonHide: [
-      '.navbar', 'nav', 'footer', '.theme-toggle', // Menus
-      'iframe', '.ad-container', 'ins.adsbygoogle', // Ads
-      'script', 'div[style*="z-index: -1000"]', // Trackers
-      '.row.mb-4' // The dropdown menus on home page
+    // ELEMENTS TO HIDE (Garbage Collection)
+    // We removed '.episode-section' and '.eplist' from this list to ensure they show up
+    hideSelectors: [
+      // Header/Footer Junk
+      '#nav-menu-btn', '.w2g-btn', '.shuffle-btn', '.nav-menu',
+      '#social-sharing', '.alert', '.text-center.mb-5', 'img[src*="solarcdn"]',
+      'footer', '#cookie-banner', '.swiper-pagination', '.featured-nav',
+      '.gif-sharing', '.modal', 
+      
+      // Heavy Page Elements (Keep video smooth)
+      '#comment',           // Hiding comments saves huge RAM
+      '.sidebar',           // Hiding sidebar focuses attention
+      '.social-share-watch',
+      '.rate-box',
+      '.entity-section',    // Description text
+      '.breadcrumb',
+      '.ctrl.light', '.ctrl.expand', '.ctrl.report'
     ],
 
-    // Specific logic for Home Page
-    home: {
-      selectors: ['.channel-card']
-    },
+    // ELEMENTS TO CLICK (Navigation Targets)
+    focusableSelectors: [
+      // Home
+      '#search input',
+      '#search-btn', 
+      '.watch-btn', 
+      '.aitem', 
+      
+      // Watch Page
+      '.play-btn',              
+      '#player',                
+      '.ctrl button',           
+      
+      // Episodes & Servers
+      '.ep-item',               // Episode buttons
+      '.eplist a',              // Alternate episode link style
+      '.eplist li',             // List items
+      '.server-item',           // Server switchers
+      '.lang-item'              // Audio language switchers
+    ],
 
-    // Specific logic for Player Page
-    player: {
-      selectors: ['.player', '.tab-buttons button', '.tab-content li a']
-    }
+    focusColor: '#FF003C',      // Neon Red
+    scrollOffset: 300
   };
 
-  // ===============================================================
-  // 2. POLYFILLS & SECURITY BYPASS
-  // ===============================================================
-  // Fix Object.assign for old TVs
-  if (typeof Object.assign != 'function') {
-    Object.assign = function(target) {
-      if (target == null) throw new TypeError('Cannot convert undefined or null to object');
-      target = Object(target);
-      for (var index = 1; index < arguments.length; index++) {
-        var source = arguments[index];
-        if (source != null) {
-          for (var key in source) {
-            if (Object.prototype.hasOwnProperty.call(source, key)) target[key] = source[key];
-          }
-        }
-      }
-      return target;
-    };
-  }
-
-  // --- BYPASS DISABLE-DEVTOOL ---
-  // We overwrite the library so it stops checking
-  try {
-      window.DisableDevtool = function() { console.log('TizenBrew: Anti-Devtool Neutralized'); };
-      if (window.disableDevtool && window.disableDevtool.isRunning) {
-          window.disableDevtool.isRunning = false;
-      }
-  } catch(e) {}
-
-  // ===============================================================
-  // 3. STATE MANAGEMENT
-  // ===============================================================
   var state = {
-    focusIndex: 0,
     focusableElements: [],
+    lastFocus: null,
     initialized: false
   };
 
-  // ===============================================================
-  // 4. DETECT PAGE TYPE
-  // ===============================================================
-  function detectPage() {
-    if (document.querySelector('video') || document.querySelector('.player')) {
-      PAGE_MODE = 'PLAYER';
-      console.log('TizenBrew: Detected PLAYER Page');
-    } else {
-      PAGE_MODE = 'HOME';
-      console.log('TizenBrew: Detected HOME Page');
-    }
-  }
-
-  // ===============================================================
-  // 5. CSS INJECTION
-  // ===============================================================
+  // ========================================
+  // 2. CSS ENGINE
+  // ========================================
   function addStyles() {
     var style = document.createElement('style');
-    style.id = 'tb-styles';
+    style.id = 'tv-mod-css';
     
     var css = '';
+
+    // --- HIDE JUNK ---
+    css += CONFIG.hideSelectors.join(', ') + ' { display: none !important; }';
+
+    // --- PERFORMANCE ---
+    css += '* { animation: none !important; transition: none !important; box-shadow: none !important; }';
+    css += 'body { background-color: #000 !important; overflow-x: hidden; }';
     
-    // Global Dark Theme & Hiding
-    css += 'body { background-color: #000 !important; color: #fff !important; overflow-x: hidden; margin: 0; padding: 10px; }';
-    css += CONFIG.commonHide.join(', ') + ' { display: none !important; visibility: hidden !important; }';
-    css += '::-webkit-scrollbar { width: 0; background: transparent; }';
+    // --- LAYOUT ---
+    css += '.dual-col { display: block !important; width: 100% !important; }';
+    css += '.scontent { width: 100% !important; max-width: 100% !important; flex: 0 0 100% !important; }';
+    css += '.watch-section { padding-top: 10px !important; }';
+    css += '.player-wrap { margin-bottom: 20px !important; }';
+    
+    // --- EPISODE LIST STYLING (Make them big enough to click) ---
+    css += '.episode-section, .eplist { display: block !important; width: 100% !important; opacity: 1 !important; visibility: visible !important; }';
+    css += '.ep-item, .eplist a, .eplist li { display: inline-block !important; padding: 10px 20px !important; margin: 5px !important; background: #222 !important; color: #fff !important; border: 1px solid #444 !important; font-size: 16px !important; min-width: 50px; text-align: center; }';
+    
+    // --- ACTIVE DUB BUTTON STYLING ---
+    css += '.active.server-item, .active.ep-item { background-color: ' + CONFIG.focusColor + ' !important; color: white !important; border-color: white !important; }';
 
-    // Focus Ring
-    css += '.tv-focused { outline: 4px solid ' + CONFIG.focusColor + ' !important; z-index: 9999; transform: scale(1.05); transition: transform 0.2s; box-shadow: 0 0 20px rgba(0,0,0,0.8); background-color: #222 !important; }';
+    // --- CURSOR HIGHLIGHT ---
+    css += '.tv-focused {';
+    css += '  outline: 6px solid ' + CONFIG.focusColor + ' !important;'; 
+    css += '  outline-offset: 3px !important;'; 
+    css += '  transform: scale(1.1) !important;';
+    css += '  z-index: 99999 !important;'; 
+    css += '  box-shadow: 0 0 50px ' + CONFIG.focusColor + ' !important;'; 
+    css += '  background-color: #333 !important;';
+    css += '}';
+    
+    // Player specific focus
+    css += '#player.tv-focused { outline: 2px solid ' + CONFIG.focusColor + ' !important; transform: none !important; }';
 
-    if (PAGE_MODE === 'HOME') {
-      // Home Grid Fixes
-      css += '.container { max-width: 100% !important; padding: 0 !important; }';
-      css += '.channel-grid { display: flex !important; flex-wrap: wrap; justify-content: center; padding-top: 20px; }';
-      css += '.channel-card { margin: 10px; width: 220px !important; display: block; text-decoration: none !important; }';
-      css += '.channel-name { color: #ccc; font-size: 18px; padding: 5px; }';
-    } 
-    else if (PAGE_MODE === 'PLAYER') {
-      // Player Page Fixes
-      css += '.container { width: 100% !important; max-width: 100% !important; padding: 0 !important; }';
-      css += '.player { margin-bottom: 20px; border-bottom: 2px solid #333; }';
-      css += '.tab-buttons { display: flex; background: #1a1a1a; padding: 10px; overflow-x: auto; white-space: nowrap; }';
-      css += '.tab-buttons button { background: #333; border: 1px solid #444; color: #fff; padding: 10px 20px; margin-right: 10px; font-size: 18px; }';
-      css += '.tab-content ul { padding: 0; list-style: none; display: flex; flex-wrap: wrap; }';
-      css += '.tab-content li { width: 100%; padding: 5px; border-bottom: 1px solid #222; }';
-      css += '.program-info { display: flex; align-items: center; padding: 5px; }';
-      css += '.program-info img { width: 60px; height: 60px; margin-right: 15px; border-radius: 4px; }';
-      css += '.program-info span { font-size: 20px; }';
-    }
-
-    style.textContent = css;
+    style.innerHTML = css;
     document.head.appendChild(style);
   }
 
-  // ===============================================================
-  // 6. VIDEO CONTROL (Player Mode Only)
-  // ===============================================================
-  function controlVideo(action) {
-    var vid = document.querySelector('video');
-    if (!vid) return;
+  // ========================================
+  // 3. AUTO-DUB LOGIC
+  // ========================================
+  function forceDub() {
+    // 1. Look for Language Switcher (Header/Player)
+    var langSwitch = document.querySelectorAll('.lang-sw span, .server-item');
+    
+    for (var i = 0; i < langSwitch.length; i++) {
+        var text = langSwitch[i].innerText.toLowerCase().trim();
+        var isDub = text === 'dub' || text === 'english' || text === 'en';
+        
+        // If we found a Dub button and it's NOT active, click it
+        if (isDub && !langSwitch[i].classList.contains('active')) {
+            console.log('TV Module: Auto-switching to DUB');
+            langSwitch[i].click();
+            return; // Stop after clicking
+        }
+    }
 
-    try {
-      switch(action) {
-        case 'PLAY':
-          if (vid.paused) vid.play();
-          else vid.pause();
-          break;
-        case 'FF':
-          vid.currentTime += 15;
-          break;
-        case 'REW':
-          vid.currentTime -= 15;
-          break;
-      }
-      
-      // Visual Feedback
-      var toast = document.createElement('div');
-      toast.textContent = action + (action === 'PLAY' ? (vid.paused ? ' ||' : ' >') : '');
-      toast.style.cssText = 'position:fixed; top:50px; right:50px; background:rgba(229,9,20,0.9); color:white; padding:10px 20px; font-size:24px; z-index:10000; border-radius:4px;';
-      document.body.appendChild(toast);
-      setTimeout(function(){ if(toast.parentNode) toast.parentNode.removeChild(toast); }, 1500);
-      
-    } catch(e) { console.error(e); }
+    // 2. Look for explicit Dub tab (common in server lists)
+    var dubTab = document.querySelector('[data-type="dub"], [data-lang="dub"]');
+    if (dubTab && !dubTab.classList.contains('active')) {
+        dubTab.click();
+    }
   }
 
-  // ===============================================================
-  // 7. SPATIAL NAVIGATION
-  // ===============================================================
+  // ========================================
+  // 4. NAVIGATION ENGINE
+  // ========================================
   function scanElements() {
-    var selectors = (PAGE_MODE === 'PLAYER') ? CONFIG.player.selectors : CONFIG.home.selectors;
-    var rawList = document.querySelectorAll(selectors.join(', '));
-    var cleanList = [];
-    
+    var selector = CONFIG.focusableSelectors.join(', ');
+    var rawList = document.querySelectorAll(selector);
+    var visibleList = [];
+
     for (var i = 0; i < rawList.length; i++) {
       var el = rawList[i];
       var rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none') {
-        cleanList.push(el);
+      var isInput = el.tagName === 'INPUT';
+      var isIframe = el.tagName === 'IFRAME' || el.id === 'player';
+
+      if ((rect.width > 0 && rect.height > 0) || isInput || isIframe) {
+        visibleList.push(el);
       }
     }
-    state.focusableElements = cleanList;
+    state.focusableElements = visibleList;
   }
 
-  function setFocus(index) {
-    var oldEl = document.querySelector('.tv-focused');
-    if (oldEl) oldEl.classList.remove('tv-focused');
+  function setFocus(el) {
+    if (!el) return;
+    if (state.lastFocus) state.lastFocus.classList.remove('tv-focused');
 
-    if (state.focusableElements.length === 0) return;
+    el.classList.add('tv-focused');
+    state.lastFocus = el;
     
-    // Bounds Check
-    if (index < 0) index = 0;
-    if (index >= state.focusableElements.length) index = state.focusableElements.length - 1;
-    
-    state.focusIndex = index;
-    var newEl = state.focusableElements[index];
-    
-    if (newEl) {
-      newEl.classList.add('tv-focused');
-      try {
-        newEl.scrollIntoView({behavior: "smooth", block: "center", inline: "center"});
-      } catch(e) {
-        newEl.scrollIntoView(true);
-      }
+    try {
+      el.scrollIntoView({block: 'center', inline: 'center', behavior: 'auto'});
+    } catch(e) {
+      window.scrollTo(0, el.offsetTop - CONFIG.scrollOffset);
     }
   }
 
   function moveFocus(direction) {
-    scanElements(); 
-    if (state.focusableElements.length === 0) return;
+    scanElements();
+    
+    if (!state.lastFocus) {
+      // Priority: Play Button -> First Episode -> Watch Button
+      var start = document.querySelector('.play-btn') || 
+                  document.querySelector('.ep-item') ||
+                  document.querySelector('.watch-btn') || 
+                  state.focusableElements[0];
+      setFocus(start);
+      return;
+    }
 
-    var current = state.focusableElements[state.focusIndex];
-    if (!current) { setFocus(0); return; }
+    var currentRect = state.lastFocus.getBoundingClientRect();
+    var curX = currentRect.left + (currentRect.width / 2);
+    var curY = currentRect.top + (currentRect.height / 2);
 
-    var curRect = current.getBoundingClientRect();
-    var curCX = curRect.left + (curRect.width / 2);
-    var curCY = curRect.top + (curRect.height / 2);
-
-    var bestCandidate = -1;
-    var minDistance = Infinity;
+    var bestEl = null;
+    var bestDist = Infinity;
 
     for (var i = 0; i < state.focusableElements.length; i++) {
-      if (i === state.focusIndex) continue;
-
       var el = state.focusableElements[i];
+      if (el === state.lastFocus) continue;
+
       var rect = el.getBoundingClientRect();
-      var cx = rect.left + (rect.width / 2);
-      var cy = rect.top + (rect.height / 2);
+      var targetX = rect.left + (rect.width / 2);
+      var targetY = rect.top + (rect.height / 2);
 
-      var dx = cx - curCX;
-      var dy = cy - curCY;
-
+      var dx = targetX - curX;
+      var dy = targetY - curY;
+      
       var valid = false;
-      // Weights allow vertical movement to be easier in lists
-      if (direction === 'UP'    && dy < -10 && Math.abs(dx) < Math.abs(dy) * 4) valid = true;
-      if (direction === 'DOWN'  && dy > 10  && Math.abs(dx) < Math.abs(dy) * 4) valid = true;
-      if (direction === 'LEFT'  && dx < -10 && Math.abs(dy) < Math.abs(dx) * 2) valid = true;
-      if (direction === 'RIGHT' && dx > 10  && Math.abs(dy) < Math.abs(dx) * 2) valid = true;
+      var weight = 0; 
+
+      if (direction === 'UP') {
+         if (dy < -10) { valid = true; weight = Math.abs(dx) * 0.5; }
+      }
+      else if (direction === 'DOWN' && dy > 10) { valid = true; weight = Math.abs(dx) * 2; }
+      else if (direction === 'LEFT' && dx < -10) { valid = true; weight = Math.abs(dy) * 3; }
+      else if (direction === 'RIGHT' && dx > 10) { valid = true; weight = Math.abs(dy) * 3; }
 
       if (valid) {
-        var dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < minDistance) {
-          minDistance = dist;
-          bestCandidate = i;
+        var dist = Math.sqrt(dx*dx + dy*dy) + weight;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestEl = el;
         }
       }
     }
 
-    if (bestCandidate !== -1) {
-      setFocus(bestCandidate);
-    }
+    if (bestEl) setFocus(bestEl);
   }
 
-  // ===============================================================
-  // 8. INPUT HANDLER
-  // ===============================================================
+  // ========================================
+  // 5. INPUT HANDLING
+  // ========================================
   function handleKey(e) {
-    var code = e.keyCode;
-    
-    // Media Keys (Only active if Player Mode)
-    if (PAGE_MODE === 'PLAYER') {
-      if (code === 415 || code === 19 || code === 10252) { controlVideo('PLAY'); return; }
-      if (code === 412) { controlVideo('REW'); return; }
-      if (code === 417) { controlVideo('FF'); return; }
+    var key = e.keyCode;
+    // 37-40: Arrows, 13: Enter, 10009: Back
+    if ([37, 38, 39, 40, 13, 10009].indexOf(key) === -1) return;
+
+    if (key === 10009) {
+      window.history.back();
+      return;
     }
 
-    switch(code) {
-      case 37: moveFocus('LEFT'); e.preventDefault(); break;
-      case 38: moveFocus('UP'); e.preventDefault(); break;
-      case 39: moveFocus('RIGHT'); e.preventDefault(); break;
-      case 40: moveFocus('DOWN'); e.preventDefault(); break;
-      case 13: // Enter
-        var el = state.focusableElements[state.focusIndex];
-        if (el) {
-          // If User clicks the Player itself, toggle Play/Pause
-          if (PAGE_MODE === 'PLAYER' && el.classList.contains('player')) {
-            controlVideo('PLAY');
-          } else {
-            el.click();
-            // If tab clicked, rescan after delay
-            setTimeout(function() { scanElements(); }, 500); 
-          }
+    if (key === 13) {
+      e.preventDefault();
+      if (state.lastFocus) {
+        if (state.lastFocus.tagName === 'INPUT') {
+            state.lastFocus.focus();
+            return;
         }
-        break;
-      case 10009: // Back
-      case 8: 
-        window.history.back(); 
-        break;
+        if (state.lastFocus.classList.contains('play-btn')) {
+            state.lastFocus.click();
+            // Wait for player to load then focus it
+            setTimeout(function() {
+                var playerContainer = document.querySelector('#player');
+                if (playerContainer) setFocus(playerContainer);
+            }, 1000);
+            return;
+        }
+        state.lastFocus.click();
+      }
+      return;
     }
+
+    e.preventDefault();
+    if (key === 37) moveFocus('LEFT');
+    if (key === 38) moveFocus('UP');
+    if (key === 39) moveFocus('RIGHT');
+    if (key === 40) moveFocus('DOWN');
   }
 
-  // ===============================================================
-  // 9. STARTUP
-  // ===============================================================
+  // ========================================
+  // 6. INITIALIZATION
+  // ========================================
   function init() {
+    if (window.location.href.indexOf(CONFIG.targetDomain) === -1) return;
     if (state.initialized) return;
-    
-    // Anti-Devtool nuclear option
-    try { 
-        var noDev = document.getElementById('disable-devtool'); 
-        if(noDev) noDev.innerHTML = '';
-    } catch(e){}
 
-    detectPage();
     addStyles();
     scanElements();
     
-    if (state.focusableElements.length > 0) setFocus(0);
+    // Initial Dub Check
+    forceDub();
+
+    // Start Focus
+    var starter = document.querySelector('.play-btn') || 
+                  document.querySelector('.ep-item') || 
+                  document.querySelector('.watch-btn');
+    if (starter) setFocus(starter);
 
     document.addEventListener('keydown', handleKey);
     
-    // Observer for dynamic content (tabs switching, lazy load)
+    // Listen for AJAX updates (like when you click "Season 2" or Episode list loads)
     var observer = new MutationObserver(function(mutations) {
-        // Simple debounce
-        if (window.tizenScanTimer) clearTimeout(window.tizenScanTimer);
-        window.tizenScanTimer = setTimeout(scanElements, 300);
+        scanElements();
+        forceDub(); // Check for dub again whenever page updates
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
     state.initialized = true;
+    console.log('AnimeKai TV: Auto-Dub Enabled');
   }
 
-  // Staggered Init
-  setTimeout(init, 500);
-  window.addEventListener('load', init);
+  init();
+  setTimeout(init, 1500);
 
 })();
